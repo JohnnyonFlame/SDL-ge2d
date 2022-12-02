@@ -294,7 +294,7 @@ static EGLSurface *MALI_EGL_CreatePixmapSurface(_THIS, SDL_WindowData *windowdat
         surf->pixmap.handles[0] = ion_data.fd;
 
         surf->pixmap_handle = displaydata->egl_create_pixmap_ID_mapping(&surf->pixmap);
-        SDL_Log("Created pixmap handle %p\n", surf->pixmap_handle);
+        SDL_Log("Created pixmap handle %ld\n", surf->pixmap_handle);
         
         surf->egl_surface = _this->egl_data->eglCreatePixmapSurface(
                 _this->egl_data->egl_display,
