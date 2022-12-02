@@ -48,6 +48,6 @@ enum Rotation
 };
 
 #define MALI_ALIGN(val, align)  (((val) + (align) - 1) & ~((align) - 1))
-#define MALI_FORMAT_ARGB8888    (0x10bba0a)
+#define MALI_FORMAT_ARGB8888    (0x10bb60a)
 
 #endif /* __MALI_H__ */
