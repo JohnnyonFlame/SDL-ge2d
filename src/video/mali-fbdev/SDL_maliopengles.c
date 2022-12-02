@@ -6,7 +6,7 @@
 #include "SDL_malivideo.h"
 
 /* EGL implementation of SDL OpenGL support */
-void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int rotation)
+void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int dst_index, int rotation)
 {
     int io;
     static struct ge2d_para_s blitRect = {};
@@ -22,7 +22,7 @@ void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int r
     blit_config.dst_para.format = GE2D_FORMAT_S32_ARGB;
 
     blit_config.dst_para.left = 0;
-    blit_config.dst_para.top = displaydata->vinfo.yres * displaydata->cur_fb;
+    blit_config.dst_para.top = displaydata->vinfo.yres * dst_index;
     blit_config.dst_para.width = displaydata->vinfo.xres;
     blit_config.dst_para.height = displaydata->vinfo.yres;
     blit_config.dst_para.x_rev = 0;
@@ -79,7 +79,7 @@ void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int r
     blitRect.src1_rect.h = target->pixmap.height;
 
     blitRect.dst_rect.x = 0;
-    blitRect.dst_rect.y = displaydata->vinfo.yres * displaydata->cur_fb;
+    blitRect.dst_rect.y = displaydata->vinfo.yres * dst_index;
     blitRect.dst_rect.w = blit_config.dst_para.width;
     blitRect.dst_rect.h = blit_config.dst_para.height;
 
@@ -93,6 +93,7 @@ void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int r
 
 int MALI_TripleBufferingThread(void *data)
 {
+    int first = 1;
     unsigned int page;
     MALI_EGL_Surface *current_surface;
 	SDL_WindowData *windowdata;
@@ -135,22 +136,22 @@ int MALI_TripleBufferingThread(void *data)
         current_surface = &windowdata->surface[windowdata->current_page];
 
 		/* wait for fence and flip display */
-        _this->egl_data->eglClientWaitSyncKHR(
+        if (_this->egl_data->eglClientWaitSyncKHR(
             _this->egl_data->egl_display,
             current_surface->fence, 
             EGL_SYNC_FLUSH_COMMANDS_BIT_KHR, 
-            (EGLTimeKHR)1e+8);
-        
-        /* blit, flip and wait for vsync if needed */
-        MALI_Rotate_Blit(data, _this->windows, current_surface, displaydata->rotation);
+            (EGLTimeKHR)1e+8) == EGL_CONDITION_SATISFIED_KHR) {
+            /* blit, flip and wait for vsync if needed */
+            MALI_Rotate_Blit(data, _this->windows, current_surface, displaydata->cur_fb, displaydata->rotation);
 
-		displaydata->vinfo.yoffset = displaydata->vinfo.yres * displaydata->cur_fb;
-		ioctl(displaydata->fb_fd, FBIOPUT_VSCREENINFO, &displaydata->vinfo);
+            displaydata->vinfo.yoffset = displaydata->vinfo.yres * displaydata->cur_fb;
+            ioctl(displaydata->fb_fd, FBIOPUT_VSCREENINFO, &displaydata->vinfo);
 #if 0
-        if (windowdata->swapInterval)
-            ioctl(displaydata->fb_fd, FBIO_WAITFORVSYNC, 0);
+            if (windowdata->swapInterval)
+                ioctl(displaydata->fb_fd, FBIO_WAITFORVSYNC, 0);
 #endif
-        displaydata->cur_fb = !displaydata->cur_fb;
+            displaydata->cur_fb = !displaydata->cur_fb;
+        }
 	}
 
 	SDL_UnlockMutex(windowdata->triplebuf_mutex);
@@ -197,18 +198,21 @@ int MALI_GLES_SwapWindow(_THIS, SDL_Window * window)
 {
     int r;
     unsigned int page;
+    EGLSurface surf;
     SDL_WindowData *windowdata;
 
     windowdata = (SDL_WindowData*)_this->windows->driverdata;
 
+    // Create the fence to signal frame completion
+    windowdata->surface[windowdata->flip_page].fence = _this->egl_data->eglCreateSyncKHR(_this->egl_data->egl_display, EGL_SYNC_FENCE_KHR, NULL);
     SDL_LockMutex(windowdata->triplebuf_mutex);
 
     page = windowdata->new_page;
     windowdata->new_page = windowdata->flip_page;
     windowdata->flip_page = page;
 
-    r = SDL_EGL_MakeCurrent(_this, windowdata->surface[windowdata->flip_page].egl_surface, _this->current_glctx);
-    windowdata->surface[windowdata->new_page].fence = _this->egl_data->eglCreateSyncKHR(_this->egl_data->egl_display, EGL_SYNC_FENCE_KHR, NULL);
+    surf = windowdata->surface[windowdata->flip_page].egl_surface;
+    r = _this->egl_data->eglMakeCurrent(_this->egl_data->egl_display, surf, surf, _this->current_glctx);
 
     SDL_CondSignal(windowdata->triplebuf_cond);
     SDL_UnlockMutex(windowdata->triplebuf_mutex);
