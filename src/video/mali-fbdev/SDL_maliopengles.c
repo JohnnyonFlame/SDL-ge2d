@@ -108,8 +108,23 @@ int MALI_TripleBufferingThread(void *data)
 
 	for (;;) {
         SDL_CondWait(windowdata->triplebuf_cond, windowdata->triplebuf_mutex);
-		if (windowdata->triplebuf_thread_stop)
-			break;
+        if (windowdata->triplebuf_thread_stop)
+            break;
+
+        if (first) {
+            /*
+             * Reset vinfo, otherwise applications can get stuck on a black screen. 
+             * This is done late to avoid applications getting rid of the splash screen.
+             */
+            displaydata->vinfo.yoffset = 0;
+            displaydata->vinfo.yres_virtual = displaydata->vinfo.yres * 2;
+            if (ioctl(displaydata->fb_fd, FBIOPUT_VSCREENINFO, &displaydata->vinfo) < 0) {
+                MALI_VideoQuit(_this);
+                return SDL_SetError("mali-fbdev: Could not put framebuffer information");
+            }
+
+            first = 0;
+        }
 
 		/* Flip the most recent back buffer with the front buffer */
 		page = windowdata->current_page;

@@ -184,13 +184,18 @@ MALI_VideoInit(_THIS)
         MALI_VideoQuit(_this);
         return SDL_SetError("mali-fbdev: Could not get framebuffer information");
     }
-
+#if 0
+    /*
+     * This is where we'd usually setup the double buffer props and everything,
+     * but we're going to delay that as much as we can to avoid killing any
+     * custom splash screen employed by the OS.
+     */
     data->vinfo.yres_virtual = data->vinfo.yres * 2;
     if (ioctl(data->fb_fd, FBIOPUT_VSCREENINFO, &data->vinfo) == -1) {
         MALI_VideoQuit(_this);
         return SDL_SetError("mali-fbdev: Unable to setup framebuffer.");
     }
-
+#endif
     system("setterm -cursor off");
 
     data->native_display.width = data->vinfo.xres;
