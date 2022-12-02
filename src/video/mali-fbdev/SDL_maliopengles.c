@@ -207,7 +207,7 @@ MALI_GLES_MakeCurrent(_THIS, SDL_Window * window, SDL_GLContext context)
     SDL_WindowData *windowdata;
     if (window) {
         windowdata = window->driverdata;
-        return SDL_EGL_MakeCurrent(_this, windowdata->surface[windowdata->new_page].egl_surface, context);
+        return SDL_EGL_MakeCurrent(_this, windowdata->surface[windowdata->flip_page].egl_surface, context);
 
     } else {
         return SDL_EGL_MakeCurrent(_this, EGL_NO_SURFACE, context);
