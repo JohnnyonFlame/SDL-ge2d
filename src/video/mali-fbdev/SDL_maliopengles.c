@@ -130,11 +130,11 @@ int MALI_TripleBufferingThread(void *data)
         MALI_Rotate_Blit(data, _this->windows, current_surface, Rotation_0);
 
 		displaydata->vinfo.yoffset = displaydata->vinfo.yres * displaydata->cur_fb;
-		ioctl(displaydata->fb_fd, FBIOPAN_DISPLAY, &displaydata->vinfo);
-
+		ioctl(displaydata->fb_fd, FBIOPUT_VSCREENINFO, &displaydata->vinfo);
+#if 0
         if (windowdata->swapInterval)
             ioctl(displaydata->fb_fd, FBIO_WAITFORVSYNC, 0);
-        
+#endif
         displaydata->cur_fb = !displaydata->cur_fb;
 	}
 
