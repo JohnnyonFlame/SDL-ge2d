@@ -395,10 +395,16 @@ MALI_DestroyWindow(_THIS, SDL_Window * window)
     windowdata = window->driverdata;
     displaydata = SDL_GetDisplayDriverData(0);
 
+    // You _MUST_ unset the current surface, otherwise you can't destroy a surface, when this happens
+    // and you try deleting a pixmap mapping, you're left with stale references and further breakage.
+    SDL_EGL_MakeCurrent(_this, EGL_NO_CONTEXT, EGL_NO_SURFACE);
+
     if (windowdata) {
         for (i = 0; i < 3; i++) {
             MALI_EGL_Surface *surf = &windowdata->surface[i];
-            close(surf->shared_fd);
+            if (surf->shared_fd >= 0)
+                close(surf->shared_fd);
+
             ionHandleData = (struct ion_handle_data) {
                 .handle = surf->handle
             };
@@ -408,15 +414,14 @@ MALI_DestroyWindow(_THIS, SDL_Window * window)
                 SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "ION_IOC_FREE failed.");
             }
 
-            surf->shared_fd = -1;
-            surf->handle = 0;
-
             if (surf->egl_surface != EGL_NO_SURFACE) {
                 SDL_EGL_DestroySurface(_this, surf->egl_surface);
                 surf->egl_surface = EGL_NO_SURFACE;
             }
-            
+
             displaydata->egl_destroy_pixmap_ID_mapping((unsigned long)surf->pixmap_handle);
+            surf->shared_fd = -1;
+            surf->handle = 0;
         }
 
         SDL_free(windowdata);
