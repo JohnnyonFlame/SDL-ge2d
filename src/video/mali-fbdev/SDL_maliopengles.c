@@ -22,9 +22,9 @@ void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int r
     blit_config.dst_para.format = GE2D_FORMAT_S32_ARGB;
 
     blit_config.dst_para.left = 0;
-    blit_config.dst_para.top = 0;
-    blit_config.dst_para.width = displaydata->native_display.width;
-    blit_config.dst_para.height = displaydata->native_display.height;
+    blit_config.dst_para.top = displaydata->vinfo.yres * displaydata->cur_fb;
+    blit_config.dst_para.width = displaydata->vinfo.xres;
+    blit_config.dst_para.height = displaydata->vinfo.yres;
     blit_config.dst_para.x_rev = 0;
     blit_config.dst_para.y_rev = 0;
 
