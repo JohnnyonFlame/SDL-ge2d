@@ -29,6 +29,7 @@ typedef struct SDL_DisplayData
     NativePixmapType (*egl_create_pixmap_ID_mapping)(mali_pixmap *);
     NativePixmapType (*egl_destroy_pixmap_ID_mapping)(int id);
 
+    int rotation;
     int ge2d_fd, ion_fd, fb_fd;
 } SDL_DisplayData;
 
@@ -53,6 +54,7 @@ typedef struct SDL_WindowData
 	SDL_cond *triplebuf_cond;
 	SDL_Thread *triplebuf_thread;
 	int triplebuf_thread_stop;
+    int prev_w, prev_h;
 
     MALI_EGL_Surface surface[3];
 
@@ -72,6 +74,7 @@ int MALI_CreateWindow(_THIS, SDL_Window * window);
 void MALI_SetWindowTitle(_THIS, SDL_Window * window);
 void MALI_SetWindowPosition(_THIS, SDL_Window * window);
 void MALI_SetWindowSize(_THIS, SDL_Window * window);
+void MALI_SetWindowFullscreen(_THIS, SDL_Window * window, SDL_VideoDisplay * display, SDL_bool fullscreen);
 void MALI_ShowWindow(_THIS, SDL_Window * window);
 void MALI_HideWindow(_THIS, SDL_Window * window);
 void MALI_DestroyWindow(_THIS, SDL_Window * window);

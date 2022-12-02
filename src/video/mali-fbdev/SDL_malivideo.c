@@ -90,6 +90,7 @@ MALI_Create()
     device->SetWindowTitle = MALI_SetWindowTitle;
     device->SetWindowPosition = MALI_SetWindowPosition;
     device->SetWindowSize = MALI_SetWindowSize;
+    device->SetWindowFullscreen = MALI_SetWindowFullscreen;
     device->ShowWindow = MALI_ShowWindow;
     device->HideWindow = MALI_HideWindow;
     device->DestroyWindow = MALI_DestroyWindow;
@@ -121,6 +122,35 @@ VideoBootStrap MALI_bootstrap = {
 /*****************************************************************************/
 /* SDL Video and Display initialization/handling functions                   */
 /*****************************************************************************/
+
+void
+MALI_Reset_Orientation_Rotation(_THIS, SDL_VideoDisplay *display, SDL_DisplayData *data)
+{
+    const char *orientation, *rotation;
+
+    /* 
+     * Orientation is the default native display orientation, on ODROID Go Ultra
+     * that would be SDL_MALI_ORIENTATION = 1, rotation is the desired rotation on
+     * top of that, e.g. SDL_MALI_ROTATION = 1 or SDL_MALI_ROTATION = 3 for TATE modes.
+     */
+    data->rotation = 0;
+    orientation = SDL_getenv("SDL_MALI_ORIENTATION");
+    rotation = SDL_getenv("SDL_MALI_ROTATION");
+    if (orientation)
+        data->rotation = (data->rotation + SDL_atoi(orientation)) % 4;
+    if (rotation)
+        data->rotation = (data->rotation + SDL_atoi(rotation)) % 4;
+
+    if ((data->rotation & 1) == 0) {
+        display->current_mode.w = data->vinfo.xres;
+        display->current_mode.h = data->vinfo.yres;
+    } else {
+        display->current_mode.w = data->vinfo.yres;
+        display->current_mode.h = data->vinfo.xres;
+    }
+
+    display->desktop_mode = display->current_mode;
+}
 
 int
 MALI_VideoInit(_THIS)
@@ -167,8 +197,6 @@ MALI_VideoInit(_THIS)
     data->native_display.height = data->vinfo.yres;
 
     SDL_zero(current_mode);
-    current_mode.w = data->vinfo.xres;
-    current_mode.h = data->vinfo.yres;
     /* FIXME: Is there a way to tell the actual refresh rate? */
     current_mode.refresh_rate = 60;
     /* 32 bpp for default */
@@ -182,6 +210,7 @@ MALI_VideoInit(_THIS)
     display.current_mode = current_mode;
     display.driverdata = data;
 
+    MALI_Reset_Orientation_Rotation(_this, &display, data);
     SDL_AddVideoDisplay(&display, SDL_FALSE);
 
 #ifdef SDL_INPUT_LINUXEV
@@ -221,6 +250,22 @@ MALI_VideoQuit(_THIS)
 
 }
 
+void MALI_MaybeRecreate(_THIS, SDL_Window *window, int w, int h)
+{
+    SDL_WindowData *windowdata;
+    if (!window || (windowdata = window->driverdata) == NULL)
+        return;
+
+    if (windowdata->prev_w == w && windowdata->prev_h == h)
+        return;
+
+    SDL_SendWindowEvent(window, SDL_WINDOWEVENT_RESIZED, w, h);
+    window->w = w;
+    window->h = h;
+    MALI_DestroyWindow(_this, window);
+    MALI_CreateWindow(_this, window);
+}
+
 void
 MALI_GetDisplayModes(_THIS, SDL_VideoDisplay * display)
 {
@@ -231,14 +276,24 @@ MALI_GetDisplayModes(_THIS, SDL_VideoDisplay * display)
 int
 MALI_SetDisplayMode(_THIS, SDL_VideoDisplay * display, SDL_DisplayMode * mode)
 {
+    SDL_Window *window;
+    window = display->fullscreen_window;
+    if (!window)
+        window = display->device->windows;
+    if (!window)
+        return 0;
+
+    display->current_mode = *mode;
+    MALI_MaybeRecreate(_this, window, mode->w, mode->h);
     return 0;
 }
 
-static EGLSurface *MALI_EGL_CreatePixmapSurface(_THIS, SDL_WindowData *windowdata, SDL_DisplayData *displaydata) 
+
+static EGLSurface *MALI_EGL_CreatePixmapSurface(_THIS, int width, int height, SDL_WindowData *windowdata, SDL_DisplayData *displaydata) 
 {
     struct ion_fd_data ion_data;
     struct ion_allocation_data allocation_data;
-    int i, io;
+    int i, io, stride;
 
     _this->egl_data->egl_surfacetype = EGL_PIXMAP_BIT;
     if (SDL_EGL_ChooseConfig(_this) != 0) {
@@ -254,16 +309,25 @@ static EGLSurface *MALI_EGL_CreatePixmapSurface(_THIS, SDL_WindowData *windowdat
     }
 
     // Populate pixmap definitions
+    stride = MALI_ALIGN(width * 4, 64);
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "Creating pixmap (%dx%d stride %d stride/4 %d).", width, height, stride, stride/4);
+
     for (i = 0; i < 3; i++)
     {
         MALI_EGL_Surface *surf = &windowdata->surface[i];
-        surf->pixmap.width = displaydata->native_display.width;
-        surf->pixmap.height = displaydata->native_display.height;
-        surf->pixmap.planes[0].stride = MALI_ALIGN(surf->pixmap.width * 4, 64);
-        surf->pixmap.planes[0].size = 
-            surf->pixmap.planes[0].stride * surf->pixmap.height;
-        surf->pixmap.planes[0].offset = 0;
-        surf->pixmap.format = MALI_FORMAT_ARGB8888; // appears to be 888X
+        surf->pixmap = (mali_pixmap) {
+            .width = width,
+            .height = height,
+            .planes[0] = (mali_plane) {
+                .stride = stride,
+                .size = stride * height,
+                .offset = 0
+            },
+            .planes[1] = (mali_plane) {},
+            .planes[2] = (mali_plane) {},
+            .format = MALI_FORMAT_ARGB8888,
+            .handles = {-1, -1, -1},
+        };
 
         allocation_data = (struct ion_allocation_data){
             .len = surf->pixmap.planes[0].size,
@@ -315,6 +379,9 @@ MALI_CreateWindow(_THIS, SDL_Window * window)
     EGLSurface egl_surface;
     SDL_WindowData *windowdata;
     SDL_DisplayData *displaydata;
+    SDL_VideoDisplay *display;
+
+    display = SDL_GetDisplayForWindow(window);
     displaydata = SDL_GetDisplayDriverData(0);
 
     /* Allocate window internal data */
@@ -322,10 +389,6 @@ MALI_CreateWindow(_THIS, SDL_Window * window)
     if (windowdata == NULL) {
         return SDL_OutOfMemory();
     }
-
-    /* Windows have one size for now */
-    window->w = displaydata->native_display.width;
-    window->h = displaydata->native_display.height;
 
     /* OpenGL ES is the law here */
     window->flags |= SDL_WINDOW_OPENGL;
@@ -350,6 +413,22 @@ MALI_CreateWindow(_THIS, SDL_Window * window)
     /* Setup driver data for this window */
     window->driverdata = windowdata;
 
+    /*
+     * Find right side up and set correct resolution, if called from
+     * MALI_SetWindowFullscreen we are going to use the current mode instead,
+     * otherwise FNA fails, but we want to be able to set arbitrary resolutions
+     * when you actually define a video mode.
+     */
+    MALI_Reset_Orientation_Rotation(_this, display, displaydata);
+    if ((window->flags & SDL_WINDOW_FULLSCREEN) != 0)
+    {
+        window->w = display->current_mode.w;
+        window->h = display->current_mode.h;
+    }
+
+    windowdata->prev_w = window->w;
+    windowdata->prev_h = window->h;
+
     /* Populate triplebuffering data and threads */
     MALI_TripleBufferInit(windowdata);
     windowdata->current_page = 0;
@@ -359,7 +438,7 @@ MALI_CreateWindow(_THIS, SDL_Window * window)
     SDL_LockMutex(windowdata->triplebuf_mutex);
     windowdata->triplebuf_thread = SDL_CreateThread(MALI_TripleBufferingThread, "MALI_TripleBufferingThread", _this);
 
-    egl_surface = MALI_EGL_CreatePixmapSurface(_this, windowdata, displaydata);
+    egl_surface = MALI_EGL_CreatePixmapSurface(_this, window->w, window->h, windowdata, displaydata);
 
     /* Wait until the triplebuf thread is ready */
     SDL_CondWait(windowdata->triplebuf_cond, windowdata->triplebuf_mutex);
@@ -443,6 +522,14 @@ MALI_SetWindowPosition(_THIS, SDL_Window * window)
 void
 MALI_SetWindowSize(_THIS, SDL_Window * window)
 {
+    MALI_MaybeRecreate(_this, window, window->w, window->h);
+}
+
+void
+MALI_SetWindowFullscreen(_THIS, SDL_Window * window, SDL_VideoDisplay * display, SDL_bool fullscreen)
+{
+    window->fullscreen_mode = display->current_mode;
+    MALI_MaybeRecreate(_this, window, display->current_mode.w, display->current_mode.h);
 }
 
 void

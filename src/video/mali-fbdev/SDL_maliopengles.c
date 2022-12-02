@@ -127,7 +127,7 @@ int MALI_TripleBufferingThread(void *data)
             (EGLTimeKHR)1e+8);
         
         /* blit, flip and wait for vsync if needed */
-        MALI_Rotate_Blit(data, _this->windows, current_surface, Rotation_0);
+        MALI_Rotate_Blit(data, _this->windows, current_surface, displaydata->rotation);
 
 		displaydata->vinfo.yoffset = displaydata->vinfo.yres * displaydata->cur_fb;
 		ioctl(displaydata->fb_fd, FBIOPUT_VSCREENINFO, &displaydata->vinfo);
