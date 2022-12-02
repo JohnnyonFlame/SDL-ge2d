@@ -332,7 +332,7 @@ static EGLSurface *MALI_EGL_CreatePixmapSurface(_THIS, int width, int height, SD
         allocation_data = (struct ion_allocation_data){
             .len = surf->pixmap.planes[0].size,
             .heap_id_mask = (1 << ION_HEAP_TYPE_DMA),
-            .flags = 0
+            .flags = 1 << ION_FLAG_CACHED
         };
 
         io = ioctl(displaydata->ion_fd, ION_IOC_ALLOC, &allocation_data);
