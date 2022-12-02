@@ -18,6 +18,12 @@
 
 #include <stdint.h>
 
+typedef struct fbdev_window_s
+{
+	unsigned short width;
+	unsigned short height;
+} fbdev_window_s;
+
 typedef struct mali_plane {
     unsigned long stride;
     unsigned long size;
