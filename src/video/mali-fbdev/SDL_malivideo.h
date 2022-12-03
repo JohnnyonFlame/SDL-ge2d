@@ -29,7 +29,7 @@ typedef struct SDL_DisplayData
     NativePixmapType (*egl_create_pixmap_ID_mapping)(mali_pixmap *);
     NativePixmapType (*egl_destroy_pixmap_ID_mapping)(int id);
 
-    int rotation;
+    int rotation, aspect;
     int ge2d_fd, ion_fd, fb_fd;
 } SDL_DisplayData;
 

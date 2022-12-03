@@ -126,7 +126,7 @@ VideoBootStrap MALI_bootstrap = {
 void
 MALI_Reset_Orientation_Rotation(_THIS, SDL_VideoDisplay *display, SDL_DisplayData *data)
 {
-    const char *orientation, *rotation;
+    const char *orientation, *rotation, *aspect;
 
     /* 
      * Orientation is the default native display orientation, on ODROID Go Ultra
@@ -134,12 +134,18 @@ MALI_Reset_Orientation_Rotation(_THIS, SDL_VideoDisplay *display, SDL_DisplayDat
      * top of that, e.g. SDL_MALI_ROTATION = 1 or SDL_MALI_ROTATION = 3 for TATE modes.
      */
     data->rotation = 0;
+    data->aspect = 1;
     orientation = SDL_getenv("SDL_MALI_ORIENTATION");
     rotation = SDL_getenv("SDL_MALI_ROTATION");
+    aspect = SDL_getenv("SDL_MALI_FULLSCREEN");
     if (orientation)
         data->rotation = (data->rotation + SDL_atoi(orientation)) % 4;
     if (rotation)
         data->rotation = (data->rotation + SDL_atoi(rotation)) % 4;
+    if (aspect)
+        data->aspect = SDL_atoi(aspect) == 0;
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_VIDEO, "Setup: rotation: %d aspect: %d", data->rotation, data->aspect);
 
     if ((data->rotation & 1) == 0) {
         display->current_mode.w = data->vinfo.xres;

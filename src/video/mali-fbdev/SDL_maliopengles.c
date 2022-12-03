@@ -5,8 +5,34 @@
 #include "SDL_maliopengles.h"
 #include "SDL_malivideo.h"
 
+#include <sys/mman.h>
+
 /* EGL implementation of SDL OpenGL support */
-void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int dst_index, int rotation)
+static void
+MALI_GetAspectCorrected(struct rectangle_s *rect, int w, int h, int flip)
+{
+    float ratio_x, ratio_y;
+    if (flip) {
+        int tmp = h;
+        h = w;
+        w = tmp;
+    }
+
+    ratio_x = (float)rect->w / w;
+    ratio_y = (float)rect->h / h;
+    if (ratio_y < ratio_x) {
+        int new_w = w * ratio_y;
+        rect->x += (rect->w - new_w) / 2;
+        rect->w = new_w;
+    } else {
+        int new_h = h * ratio_x;
+        rect->y += (rect->h - new_h) / 2;
+        rect->h = new_h;
+    }
+}
+
+void
+MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int dst_index, int rotation, int aspect)
 {
     int io;
     static struct ge2d_para_s blitRect = {};
@@ -78,10 +104,13 @@ void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int d
     blitRect.src1_rect.w = target->pixmap.width;
     blitRect.src1_rect.h = target->pixmap.height;
 
-    blitRect.dst_rect.x = 0;
-    blitRect.dst_rect.y = displaydata->vinfo.yres * dst_index;
+    blitRect.dst_rect.x = blit_config.dst_para.left;
+    blitRect.dst_rect.y = blit_config.dst_para.top;
     blitRect.dst_rect.w = blit_config.dst_para.width;
     blitRect.dst_rect.h = blit_config.dst_para.height;
+
+    if (aspect)
+        MALI_GetAspectCorrected(&blitRect.dst_rect, window->w, window->h, rotation & 1);
 
     io = ioctl(displaydata->ge2d_fd, GE2D_STRETCHBLIT_NOALPHA, &blitRect);
     if (io < 0)
@@ -93,7 +122,6 @@ void MALI_Rotate_Blit(_THIS, SDL_Window *window, MALI_EGL_Surface *target, int d
 
 int MALI_TripleBufferingThread(void *data)
 {
-    int first = 1;
     unsigned int page;
     MALI_EGL_Surface *current_surface;
 	SDL_WindowData *windowdata;
@@ -111,21 +139,6 @@ int MALI_TripleBufferingThread(void *data)
         SDL_CondWait(windowdata->triplebuf_cond, windowdata->triplebuf_mutex);
         if (windowdata->triplebuf_thread_stop)
             break;
-
-        if (first) {
-            /*
-             * Reset vinfo, otherwise applications can get stuck on a black screen. 
-             * This is done late to avoid applications getting rid of the splash screen.
-             */
-            displaydata->vinfo.yoffset = 0;
-            displaydata->vinfo.yres_virtual = displaydata->vinfo.yres * 2;
-            if (ioctl(displaydata->fb_fd, FBIOPUT_VSCREENINFO, &displaydata->vinfo) < 0) {
-                MALI_VideoQuit(_this);
-                return SDL_SetError("mali-fbdev: Could not put framebuffer information");
-            }
-
-            first = 0;
-        }
 
 		/* Flip the most recent back buffer with the front buffer */
 		page = windowdata->current_page;
@@ -165,7 +178,7 @@ int MALI_TripleBufferingThread(void *data)
                 current_surface->needs_clear = 0;
             }
 
-            MALI_Rotate_Blit(data, _this->windows, current_surface, displaydata->cur_fb, displaydata->rotation);
+            MALI_Rotate_Blit(data, _this->windows, current_surface, displaydata->cur_fb, displaydata->rotation, displaydata->aspect);
 
             displaydata->vinfo.yoffset = displaydata->vinfo.yres * displaydata->cur_fb;
             ioctl(displaydata->fb_fd, FBIOPUT_VSCREENINFO, &displaydata->vinfo);
