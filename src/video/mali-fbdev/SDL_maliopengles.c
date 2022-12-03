@@ -141,7 +141,30 @@ int MALI_TripleBufferingThread(void *data)
             current_surface->fence, 
             EGL_SYNC_FLUSH_COMMANDS_BIT_KHR, 
             (EGLTimeKHR)1e+8) == EGL_CONDITION_SATISFIED_KHR) {
-            /* blit, flip and wait for vsync if needed */
+            if (current_surface->needs_clear) {
+                struct fb_fix_screeninfo finfo = {};
+                void *fb;
+                
+                // Clear the frame once right before a new frame is in to avoid flickering
+                if (ioctl(displaydata->fb_fd, FBIOGET_FSCREENINFO, &finfo) < 0) {
+                    MALI_VideoQuit(_this);
+                    return SDL_SetError("mali-fbdev: Could not clear framebuffer.");
+                }
+
+                fb = mmap(0, finfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, displaydata->fb_fd, 0);
+                if (fb != MAP_FAILED) {
+                    uintptr_t frame_len = displaydata->vinfo.yres * displaydata->vinfo.xres * 4;
+                    uintptr_t off = (uintptr_t)fb + (frame_len * displaydata->cur_fb);
+                    memset((void*)off, 0, frame_len);
+                    munmap(fb, finfo.smem_len);
+                } else {
+                    MALI_VideoQuit(_this);
+                    return SDL_SetError("mali-fbdev: Could not clear framebuffer.");      
+                }
+
+                current_surface->needs_clear = 0;
+            }
+
             MALI_Rotate_Blit(data, _this->windows, current_surface, displaydata->cur_fb, displaydata->rotation);
 
             displaydata->vinfo.yoffset = displaydata->vinfo.yres * displaydata->cur_fb;

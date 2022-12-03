@@ -358,6 +358,7 @@ static EGLSurface *MALI_EGL_CreatePixmapSurface(_THIS, int width, int height, SD
             return EGL_NO_SURFACE;
         }
 
+        surf->needs_clear = 1;
         surf->handle = allocation_data.handle;
         surf->shared_fd = ion_data.fd;
         surf->pixmap.handles[0] = ion_data.fd;

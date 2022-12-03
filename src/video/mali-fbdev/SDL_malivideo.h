@@ -40,6 +40,7 @@ typedef struct MALI_EGL_Surface
     EGLSurface egl_surface;
     NativePixmapType pixmap_handle;
     mali_pixmap pixmap;
+    int needs_clear;
     int shared_fd;
     int handle;
 } MALI_EGL_Surface;
